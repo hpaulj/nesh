@@ -8,63 +8,53 @@ fs = require 'fs'
 nesh = require './nesh'
 path = require 'path'
 
-# Parse command-line options
-optimist = require('optimist')
-    .usage('$0 [options]')
-    .options 'c',
-        describe: 'Load CoffeeScript; shortcut for -l coffee'
-        boolean: true
-    .options 'disable',
-        describe: 'Disable plugin(s) for autoload'
-        string: true
-    .options 'e',
-        alias: 'eval'
-        describe: 'Filename or string to eval in the REPL context'
-        string: true
-    .options 'enable',
-        describe: 'Enable plugin(s) for autoload'
-        string: true
-    .options 'h',
-        alias: 'help'
-        describe: 'Show help and exit'
-        boolean: true
-    .options 'l',
-        alias: 'lang'
-        describe: 'Set interpreter language'
-        string: true
-    .options 'list-languages',
-        describe: 'List available languages'
-        boolean: true
-    .options 'p',
-        alias: 'prompt'
-        describe: 'Set prompt string'
-        string: true
-    .options 'plugins',
-        describe: 'List auto-loaded plugins'
-        boolean: true
-    .options 'v',
-        alias: 'version'
-        describe: 'Show version and exit'
-        boolean: true
-    .options 'verbose',
-        describe: 'Enable verbose debug output'
-        boolean: true
-    .options 'w',
-        alias: 'welcome'
-        describe: 'Set welcome message'
-        string: true
+argparse = require('argparse')
+#argparse = require('argcoffee')
+parser = new argparse.ArgumentParser()
+parser.addArgument(['-c', '--coffee'], {action:'storeTrue', help:'Load CoffeeScript; shortcut for -l coffee'})
+parser.addArgument(['--disable'], {nargs:'+', help:'Disable plugin(s) for autoload', metavar:'MODULE'})
+parser.addArgument(['-e', '--eval'], {help:'Filename or string to eval in the REPL context'})
+parser.addArgument(['--enable'], {nargs:'+', help:'Enable plugin(s) for autoload', metavar:'MODULE'})
+parser.addArgument(['-l', '--language'], {help:'Set interpreter language'})
+parser.addArgument(['--list-languages'], {action:'storeTrue', help:'List available languages'})
+parser.addArgument(['-p', '--prompt'], {help:'Set prompt string '})
+parser.addArgument(['--plugins'], {action:'storeTrue', help:'List auto-loaded plugins'})
+parser.addArgument(['--version'], {action:'storeTrue', help:'Show version and exit'})
+parser.addArgument(['--verbose'], {action:'storeTrue', help:'Enable verbose debug output'})
+parser.addArgument(['-w', '--welcome'], {help:'Set welcome message'})
 
-argv = optimist.argv
+# what should we do about extra strings?
+# option 1 - raise error if there is anything extra
+#    argv = parser.parseArgs()
+# option 2 - put everything extra in an attribute
+#    [argv,rest] = parser.parseKnownArgs()
+#    argv._ = rest
+# option 3 - define a positional '*' take extras
+#    SUPPRESS keeps it out of the usage/help
+#    unknown optionals (--) will still give error
+#    parser.addArgument(['_'], {nargs:'*', help: argparse.Const.SUPPRESS})
+# option 4 - use REMAINDER to define the positional
+#    once it 'starts' it takes everything, including option like
+#    parser.addArgument(['_'], {nargs:'...', help: argparse.Const.SUPPRESS})
+# can we do anything meaningful with argv._?  Like passing it to the REPL?
+# REPL can use process.argv
 
-if argv.h
+parser.addArgument(['_'], {nargs:'*', help: argparse.Const.SUPPRESS})
+argv = parser.parseArgs()
+
+# what to do with unrecognized args?
+if argv.verbose
+    console.log argv
+
+if argv.help
     optimist.showHelp()
     return
 
-if argv.v
+if argv.version
     nesh.log.info "nesh version #{nesh.version}"
     return
 
-if argv['list-languages']
+if argv.list_languages
     nesh.log.info nesh.languages().join ', '
     return
 
@@ -74,10 +64,10 @@ if argv.verbose
 
 nesh.config.load()
 
-if argv.enable
+if argv.enable?
     # Enable a new plugin, installing it if needed. This updates the user's
     # Nesh configuration file.
-    enabled = argv.enable.split ','
+    enabled = argv.enable
 
     install = enabled.filter (item) ->
         not fs.existsSync "./plugins/#{item}.js"
@@ -96,11 +86,13 @@ if argv.enable
     config.pluginsExclude = _(config.pluginsExclude).reject (item) -> item in enabled
 
     nesh.config.save()
+    # Exit after installation/removal of plugins
+    return
 
-if argv.disable
-    # Disable a plugin, removing it if needed. This udpates the user's
+if argv.disable?
+    # Disable a plugin, removing it if needed. This updates the user's
     # Nesh configuration file.
-    disabled = argv.disable.split ','
+    disabled = argv.disable
 
     prefix = path.join nesh.config.home, '.nesh_modules'
     uninstall = disabled.filter (item) ->
@@ -119,17 +111,14 @@ if argv.disable
     config.pluginsExclude = _(config.pluginsExclude.concat disabled).uniq()
 
     nesh.config.save()
-
-if argv.enable or argv.disable
-    # Exit after installation/removal of plugins
     return
 
-if argv.c
+if argv.coffee
     # Shortcut for CoffeeScript
-    argv.lang = 'coffee'
+    argv.language = 'coffee'
 
-if argv.lang
-    nesh.loadLanguage argv.lang
+if argv.language
+    nesh.loadLanguage argv.language
 
 opts = {}
 opts.prompt = argv.prompt if argv.prompt?
